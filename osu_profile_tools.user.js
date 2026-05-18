@@ -97,12 +97,11 @@
         
         if (!imgSrc) return;
         
-        if (e.button === 0) { // ЛКМ - приближение
+        // Обрабатываем только ЛКМ (кнопка 0)
+        if (e.button === 0) { 
             openModal(imgSrc);
-        } else if (e.button === 2) { // ПКМ - сохранение
-            const filename = isBanner ? 'osu_banner.png' : 'osu_avatar.png';
-            downloadImage(imgSrc, filename);
         }
+        // ПКМ (кнопка 2) не обрабатываем - пусть браузер показывает своё контекстное меню
     }
 
     function attachListenerToElement(element, isBanner, getImageSrcFn) {
@@ -111,16 +110,17 @@
         element.dataset.osuToolsAttached = 'true';
         element.style.cursor = 'pointer';
         
+        // Добавляем атрибут draggable="false" чтобы избежать перетаскивания
+        if (element.tagName === 'IMG') {
+            element.setAttribute('draggable', 'false');
+        }
+        
         element.addEventListener('mousedown', function(e) {
             const imgSrc = getImageSrcFn();
             handleImageClick(e, imgSrc, isBanner);
         });
         
-        // Отключаем контекстное меню браузера
-        element.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        });
+        // НЕ отключаем контекстное меню браузера - оставляем стандартное поведение для ПКМ
     }
 
     function findAndAttach() {
