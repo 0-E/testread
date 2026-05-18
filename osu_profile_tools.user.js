@@ -1,12 +1,11 @@
 // ==UserScript==
-// @name         osu! Profile Image Tools
+// @name         osu! Profile Image Tools (Fixed)
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  ЛКМ - приблизить avatar/banner, ПКМ - сохранить изображение
+// @version      2.0
+// @description  ЛКМ - приблизить avatar/banner, ПКМ - сохранить изображение. Исправленные селекторы.
 // @author       You
 // @match        https://osu.ppy.sh/users/*
 // @grant        GM_xmlhttpRequest
-// @grant        GM_registerMenuCommand
 // @connect      *
 // ==/UserScript==
 
@@ -92,32 +91,29 @@
         });
     }
 
-    function handleImageClick(e, imgElement, isBanner) {
+    function handleImageClick(e, imgSrc, isBanner) {
         e.preventDefault();
         e.stopPropagation();
         
+        if (!imgSrc) return;
+        
         if (e.button === 0) { // ЛКМ - приближение
-            const imgSrc = imgElement.src || imgElement.currentSrc;
-            if (imgSrc) {
-                openModal(imgSrc);
-            }
+            openModal(imgSrc);
         } else if (e.button === 2) { // ПКМ - сохранение
-            const imgSrc = imgElement.src || imgElement.currentSrc;
-            if (imgSrc) {
-                const filename = isBanner ? 'osu_banner.png' : 'osu_avatar.png';
-                downloadImage(imgSrc, filename);
-            }
+            const filename = isBanner ? 'osu_banner.png' : 'osu_avatar.png';
+            downloadImage(imgSrc, filename);
         }
     }
 
-    function attachListener(element, isBanner) {
+    function attachListenerToElement(element, isBanner, getImageSrcFn) {
         if (!element || element.dataset.osuToolsAttached) return;
         
         element.dataset.osuToolsAttached = 'true';
         element.style.cursor = 'pointer';
         
         element.addEventListener('mousedown', function(e) {
-            handleImageClick(e, element, isBanner);
+            const imgSrc = getImageSrcFn();
+            handleImageClick(e, imgSrc, isBanner);
         });
         
         // Отключаем контекстное меню браузера
@@ -128,30 +124,35 @@
     }
 
     function findAndAttach() {
-        // Avatar
-        const avatar = document.querySelector('.profile-header__avatar img, .user-profile-header__avatar img, [class*="avatar"] img');
-        if (avatar && avatar.parentElement) {
-            attachListener(avatar.parentElement, false);
-        }
-
-        // Banner
-        const banner = document.querySelector('.profile-header__cover, .user-profile-header__cover, [class*="cover"]');
-        if (banner) {
-            attachListener(banner, true);
-        }
-
-        // Альтернативные селекторы для новых версий сайта
-        const allImages = document.querySelectorAll('img');
-        allImages.forEach(img => {
-            const src = img.src || img.currentSrc;
-            if (src) {
-                if (src.includes('avatars')) {
-                    attachListener(img, false);
-                } else if (src.includes('covers') || src.includes('banners')) {
-                    attachListener(img, true);
+        // --- AVATAR ---
+        // Селектор: .avatar.avatar--guest.avatar--full или .avatar--full img
+        const avatarContainer = document.querySelector('.avatar--full');
+        if (avatarContainer) {
+            // Пытаемся найти img внутри
+            const avatarImg = avatarContainer.querySelector('img');
+            if (avatarImg) {
+                attachListenerToElement(avatarContainer, false, () => avatarImg.src || avatarImg.currentSrc);
+            } else {
+                // Если img нет, возможно фон задан через style.background-image
+                const bgMatch = avatarContainer.style.backgroundImage.match(/url\(["']?([^"']+?)["']?\)/);
+                if (bgMatch && bgMatch[1]) {
+                    attachListenerToElement(avatarContainer, false, () => bgMatch[1]);
                 }
             }
-        });
+        }
+
+        // --- BANNER ---
+        // Селектор: .profile-info__bg
+        const bannerContainer = document.querySelector('.profile-info__bg');
+        if (bannerContainer) {
+            // Баннер обычно задан через background-image
+            const bgStyle = window.getComputedStyle(bannerContainer).backgroundImage;
+            const bgMatch = bgStyle.match(/url\(["']?([^"']+?)["']?\)/);
+            
+            if (bgMatch && bgMatch[1]) {
+                attachListenerToElement(bannerContainer, true, () => bgMatch[1]);
+            }
+        }
     }
 
     // Запуск при загрузке страницы
@@ -161,8 +162,9 @@
         findAndAttach();
     }
 
-    // Повторная попытка через некоторое время (для SPA)
+    // Повторная попытка через некоторое время (для SPA и ленивой загрузки)
     setTimeout(findAndAttach, 1000);
     setTimeout(findAndAttach, 3000);
+    setTimeout(findAndAttach, 5000);
 
 })();
