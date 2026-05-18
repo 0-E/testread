@@ -1,240 +1,168 @@
 // ==UserScript==
 // @name         osu! Profile Image Tools
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  ЛКМ - приблизить изображение, ПКМ - сохранить avatar/banner
+// @version      1.2
+// @description  ЛКМ - приблизить avatar/banner, ПКМ - сохранить изображение
 // @author       You
 // @match        https://osu.ppy.sh/users/*
 // @grant        GM_xmlhttpRequest
-// @connect      ppy.sh
-// @connect      s.ppy.sh
-// @connect      a.ppy.sh
+// @grant        GM_registerMenuCommand
+// @connect      *
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    let zoomModal = null;
+    let modal = null;
+    let modalImg = null;
 
-    // Извлечение ID пользователя из URL
-    function getUserId() {
-        const match = window.location.pathname.match(/\/users\/(\d+)/);
-        return match ? match[1] : null;
-    }
+    function createModal() {
+        if (modal) return;
 
-    // Создание модального окна для зума
-    function createZoomModal() {
-        if (zoomModal) return zoomModal;
-        
-        zoomModal = document.createElement('div');
-        zoomModal.id = 'osu-zoom-modal';
-        zoomModal.style.cssText = `
+        modal = document.createElement('div');
+        modal.id = 'osu-image-modal';
+        modal.style.cssText = `
+            display: none;
             position: fixed;
-            top: 0;
+            z-index: 999999;
             left: 0;
+            top: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 999999;
-            cursor: zoom-out;
+            background-color: rgba(0,0,0,0.9);
+            cursor: pointer;
         `;
-        
-        const img = document.createElement('img');
-        img.id = 'osu-zoom-image';
-        img.style.cssText = `
+
+        modalImg = document.createElement('img');
+        modalImg.id = 'osu-modal-img';
+        modalImg.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             max-width: 90%;
             max-height: 90%;
-            object-fit: contain;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
         `;
-        
-        zoomModal.appendChild(img);
-        document.body.appendChild(zoomModal);
-        
+
+        modal.appendChild(modalImg);
+        document.body.appendChild(modal);
+
         // Закрытие по клику
-        zoomModal.addEventListener('click', () => {
-            zoomModal.style.display = 'none';
-        });
+        modal.addEventListener('click', closeModal);
         
         // Закрытие по Esc
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && zoomModal.style.display === 'flex') {
-                zoomModal.style.display = 'none';
-            }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeModal();
         });
-        
-        return zoomModal;
     }
 
-    // Функция зума изображения
-    function zoomImage(imageUrl) {
-        const modal = createZoomModal();
-        const img = document.getElementById('osu-zoom-image');
-        img.src = imageUrl;
-        modal.style.display = 'flex';
+    function openModal(imgSrc) {
+        createModal();
+        modalImg.src = imgSrc;
+        modal.style.display = 'block';
     }
 
-    // Функция скачивания изображения через GM
-    function downloadImage(imageUrl, filename) {
+    function closeModal() {
+        if (modal) {
+            modal.style.display = 'none';
+            modalImg.src = '';
+        }
+    }
+
+    function downloadImage(url, filename) {
         GM_xmlhttpRequest({
             method: 'GET',
-            url: imageUrl,
+            url: url,
             responseType: 'blob',
             onload: function(response) {
                 const blob = response.response;
-                const url = URL.createObjectURL(blob);
-                
+                const downloadUrl = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
+                a.href = downloadUrl;
                 a.download = filename;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
-                setTimeout(() => URL.revokeObjectURL(url), 100);
+                URL.revokeObjectURL(downloadUrl);
             },
             onerror: function() {
-                console.error('Error downloading image:', imageUrl);
-                window.open(imageUrl, '_blank');
+                alert('Не удалось скачать изображение');
             }
         });
     }
 
-    // Получение URL аватара
-    function getAvatarUrl() {
-        const ogImage = document.querySelector('meta[property="og:image"]');
-        if (ogImage) {
-            return ogImage.getAttribute('content');
-        }
-        const avatarImg = document.querySelector('img[src*="a.ppy.sh"]');
-        if (avatarImg) {
-            return avatarImg.src;
-        }
-        return null;
-    }
-
-    // Получение URL баннера
-    function getBannerUrl(userId) {
-        return `https://s.ppy.sh/a/${userId}`;
-    }
-
-    // Поиск элемента баннера
-    function findBannerElement() {
-        const allElements = document.querySelectorAll('*');
-        for (const el of allElements) {
-            const style = window.getComputedStyle(el);
-            if (style.backgroundImage && style.backgroundImage.includes('s.ppy.sh')) {
-                return el;
-            }
-        }
-        const bannerSelectors = [
-            '.profile-header__banner',
-            '[class*="banner"]',
-            '.user-page .profile-header'
-        ];
-        for (const selector of bannerSelectors) {
-            const el = document.querySelector(selector);
-            if (el) return el;
-        }
-        return null;
-    }
-
-    // Поиск элемента аватара
-    function findAvatarElement() {
-        const selectors = [
-            'img[src*="a.ppy.sh"]',
-            '[class*="avatar"] img',
-            'img[class*="avatar"]',
-            '.profile-header__avatar img'
-        ];
-        for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            if (el) return el;
-        }
-        return null;
-    }
-
-    // Проверка является ли элемент аватаром или содержит его
-    function isAvatarElement(el) {
-        const avatarEl = findAvatarElement();
-        if (!avatarEl) return false;
-        return el === avatarEl || avatarEl.contains(el) || el.contains(avatarEl);
-    }
-
-    // Проверка является ли элемент баннером или содержит его
-    function isBannerElement(el) {
-        const bannerEl = findBannerElement();
-        if (!bannerEl) return false;
-        return el === bannerEl || bannerEl.contains(el) || el.contains(bannerEl);
-    }
-
-    // Обработка кликов
-    function setupImageHandlers() {
-        const userId = getUserId();
-        const avatarUrl = getAvatarUrl();
-        const bannerUrl = userId ? getBannerUrl(userId) : null;
-
-        document.addEventListener('click', function(e) {
-            const target = e.target;
-            
-            if (isAvatarElement(target) && avatarUrl) {
-                if (e.button === 0) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    zoomImage(avatarUrl);
-                    return false;
-                }
-            }
-
-            if (isBannerElement(target) && bannerUrl) {
-                if (e.button === 0) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    zoomImage(bannerUrl);
-                    return false;
-                }
-            }
-        }, true);
-
-        document.addEventListener('contextmenu', function(e) {
-            const target = e.target;
-            
-            if (isAvatarElement(target) && avatarUrl) {
-                e.preventDefault();
-                e.stopPropagation();
-                downloadImage(avatarUrl, `avatar_${userId}.jpg`);
-                return false;
-            }
-            
-            if (isBannerElement(target) && bannerUrl) {
-                e.preventDefault();
-                e.stopPropagation();
-                downloadImage(bannerUrl, `banner_${userId}.jpg`);
-                return false;
-            }
-        }, true);
-    }
-
-    // Запуск после загрузки страницы
-    function init() {
-        setTimeout(setupImageHandlers, 500);
-        setTimeout(setupImageHandlers, 1500);
-        setTimeout(setupImageHandlers, 3000);
+    function handleImageClick(e, imgElement, isBanner) {
+        e.preventDefault();
+        e.stopPropagation();
         
-        const observer = new MutationObserver(() => {
-            setupImageHandlers();
+        if (e.button === 0) { // ЛКМ - приближение
+            const imgSrc = imgElement.src || imgElement.currentSrc;
+            if (imgSrc) {
+                openModal(imgSrc);
+            }
+        } else if (e.button === 2) { // ПКМ - сохранение
+            const imgSrc = imgElement.src || imgElement.currentSrc;
+            if (imgSrc) {
+                const filename = isBanner ? 'osu_banner.png' : 'osu_avatar.png';
+                downloadImage(imgSrc, filename);
+            }
+        }
+    }
+
+    function attachListener(element, isBanner) {
+        if (!element || element.dataset.osuToolsAttached) return;
+        
+        element.dataset.osuToolsAttached = 'true';
+        element.style.cursor = 'pointer';
+        
+        element.addEventListener('mousedown', function(e) {
+            handleImageClick(e, element, isBanner);
         });
         
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
+        // Отключаем контекстное меню браузера
+        element.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
         });
     }
 
+    function findAndAttach() {
+        // Avatar
+        const avatar = document.querySelector('.profile-header__avatar img, .user-profile-header__avatar img, [class*="avatar"] img');
+        if (avatar && avatar.parentElement) {
+            attachListener(avatar.parentElement, false);
+        }
+
+        // Banner
+        const banner = document.querySelector('.profile-header__cover, .user-profile-header__cover, [class*="cover"]');
+        if (banner) {
+            attachListener(banner, true);
+        }
+
+        // Альтернативные селекторы для новых версий сайта
+        const allImages = document.querySelectorAll('img');
+        allImages.forEach(img => {
+            const src = img.src || img.currentSrc;
+            if (src) {
+                if (src.includes('avatars')) {
+                    attachListener(img, false);
+                } else if (src.includes('covers') || src.includes('banners')) {
+                    attachListener(img, true);
+                }
+            }
+        });
+    }
+
+    // Запуск при загрузке страницы
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', findAndAttach);
     } else {
-        init();
+        findAndAttach();
     }
+
+    // Повторная попытка через некоторое время (для SPA)
+    setTimeout(findAndAttach, 1000);
+    setTimeout(findAndAttach, 3000);
+
 })();
